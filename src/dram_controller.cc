@@ -219,9 +219,9 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
 
         uint64_t LATENCY = 0;
         if (row_buffer_hit)  
-            LATENCY = tCAS;
+            LATENCY = cas;
         else 
-            LATENCY = tRP + tRCD + tCAS;
+            LATENCY = rp + rcd + cas;
 
         uint64_t op_addr = queue->entry[oldest_index].address;
         uint32_t op_cpu = queue->entry[oldest_index].cpu,

@@ -199,7 +199,7 @@ void CACHE::handle_fill()
                 if (PROCESSED.occupancy < PROCESSED.SIZE)
                     PROCESSED.add_queue(&MSHR.entry[mshr_index]);
             }
-            //else if (cache_type == IS_L1D) {
+            //else if (cache_type == IS_L1D) remember to add the left curly bracket if using this code line 
             else if ((cache_type == IS_L1D) && (MSHR.entry[mshr_index].type != PREFETCH)) {
                 if (PROCESSED.occupancy < PROCESSED.SIZE)
                     PROCESSED.add_queue(&MSHR.entry[mshr_index]);
@@ -556,7 +556,7 @@ void CACHE::handle_read()
                     if (PROCESSED.occupancy < PROCESSED.SIZE)
                         PROCESSED.add_queue(&RQ.entry[index]);
                 }
-                //else if (cache_type == IS_L1D) {
+                //else if (cache_type == IS_L1D) here I also delete a left curly bracket to prevent vim miss match of brackets 
                 else if ((cache_type == IS_L1D) && (RQ.entry[index].type != PREFETCH)) {
                     if (PROCESSED.occupancy < PROCESSED.SIZE)
                         PROCESSED.add_queue(&RQ.entry[index]);
