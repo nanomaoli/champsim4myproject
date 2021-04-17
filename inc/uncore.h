@@ -4,6 +4,7 @@
 #include "champsim.h"
 #include "cache.h"
 #include "dram_controller.h"
+#include "hmmu.h"
 //#include "drc_controller.h"
 
 //#define DRC_MSHR_SIZE 48
@@ -17,6 +18,11 @@ class UNCORE {
 
     // DRAM
     MEMORY_CONTROLLER DRAM{"DRAM",TRP_DRAM,TRCD_DRAM,TCAS_DRAM};
+
+    MEMORY_CONTROLLER NVM{"NVM",TRP_NVM,TRCD_NVM,TCAS_NVM};
+
+    //HMMU
+    MEMORY_MANAGER HMMU{"HMMU"};
 
     UNCORE(); 
 };
