@@ -134,25 +134,6 @@ void print_dram_stats()
         cout << " AVG_CONGESTED_CYCLE: " << (total_congested_cycle / uncore.DRAM.dbus_congested[NUM_TYPES][NUM_TYPES]) << endl;
     else
         cout << " AVG_CONGESTED_CYCLE: -" << endl;
-
-    cout << endl;
-    cout << "NVM Statistics" << endl;
-    for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
-        cout << " CHANNEL " << i << endl;
-        cout << " RQ ROW_BUFFER_HIT: " << setw(10) << uncore.NVM.RQ[i].ROW_BUFFER_HIT << "  ROW_BUFFER_MISS: " << setw(10) << uncore.NVM.RQ[i].ROW_BUFFER_MISS << endl;
-        cout << " DBUS_CONGESTED: " << setw(10) << uncore.NVM.dbus_congested[NUM_TYPES][NUM_TYPES] << endl; 
-        cout << " WQ ROW_BUFFER_HIT: " << setw(10) << uncore.NVM.WQ[i].ROW_BUFFER_HIT << "  ROW_BUFFER_MISS: " << setw(10) << uncore.NVM.WQ[i].ROW_BUFFER_MISS;
-        cout << "  FULL: " << setw(10) << uncore.NVM.WQ[i].FULL << endl; 
-        cout << endl;
-    }
-
-    uint64_t total_congested_cycle_NVM = 0;
-    for (uint32_t i=0; i<DRAM_CHANNELS; i++)
-        total_congested_cycle_NVM += uncore.NVM.dbus_cycle_congested[i];
-    if (uncore.NVM.dbus_congested[NUM_TYPES][NUM_TYPES])
-        cout << " AVG_CONGESTED_CYCLE: " << (total_congested_cycle_NVM / uncore.NVM.dbus_congested[NUM_TYPES][NUM_TYPES]) << endl;
-    else
-        cout << " AVG_CONGESTED_CYCLE: -" << endl;
 }
 
 void reset_cache_stats(uint32_t cpu, CACHE *cache)
@@ -237,13 +218,7 @@ void finish_warmup()
         uncore.DRAM.WQ[i].ROW_BUFFER_HIT = 0;
         uncore.DRAM.WQ[i].ROW_BUFFER_MISS = 0;
     }
-    // reset NVM stats
-    for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
-        uncore.NVM.RQ[i].ROW_BUFFER_HIT = 0;
-        uncore.NVM.RQ[i].ROW_BUFFER_MISS = 0;
-        uncore.NVM.WQ[i].ROW_BUFFER_HIT = 0;
-        uncore.NVM.WQ[i].ROW_BUFFER_MISS = 0;
-    }
+
     // set actual cache latency
     for (uint32_t i=0; i<NUM_CPUS; i++) {
         ooo_cpu[i].ITLB.LATENCY = ITLB_LATENCY;
@@ -783,12 +758,7 @@ int main(int argc, char** argv)
         uncore.LLC.MAX_READ = NUM_CPUS;
         uncore.LLC.upper_level_icache[i] = &ooo_cpu[i].L2C;
         uncore.LLC.upper_level_dcache[i] = &ooo_cpu[i].L2C;
-        //uncore.LLC.lower_level = &uncore.DRAM;
-	uncore.LLC.lower_level = &uncore.HMMU;
-
-	//HYBRID MEMORY MANAGER
-	uncore.HMMU.lower_level = &uncore.DRAM;
-	uncore.HMMU.extra_interface = &uncore.NVM;
+        uncore.LLC.lower_level = &uncore.DRAM;
 
         // OFF-CHIP DRAM
         uncore.DRAM.fill_level = FILL_DRAM;
@@ -797,15 +767,6 @@ int main(int argc, char** argv)
         for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
             uncore.DRAM.RQ[i].is_RQ = 1;
             uncore.DRAM.WQ[i].is_WQ = 1;
-        }
-
-        // OFF-CHIP NVM
-        uncore.NVM.fill_level = FILL_DRAM;
-        uncore.NVM.upper_level_icache[i] = &uncore.LLC;
-        uncore.NVM.upper_level_dcache[i] = &uncore.LLC;
-        for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
-            uncore.NVM.RQ[i].is_RQ = 1;
-            uncore.NVM.WQ[i].is_WQ = 1;
         }
 
         warmup_complete[i] = 0;
@@ -951,8 +912,6 @@ int main(int argc, char** argv)
 
         // TODO: should it be backward?
         uncore.DRAM.operate();
-	uncore.NVM.operate();
-	uncore.HMMU.operate();
         uncore.LLC.operate();
     }
 
