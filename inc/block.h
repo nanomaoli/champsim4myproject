@@ -113,7 +113,8 @@ class PACKET {
              instr_id,
              ip, 
              event_cycle,
-             cycle_enqueued;
+             cycle_enqueued,
+             hm_addr;
 
     PACKET() {
         instruction = 0;
