@@ -58,7 +58,7 @@ class MEMORY_MANAGER : public MEMORY {
  	uint32_t  get_occupancy(uint8_t queue_type, uint64_t address),
 		  get_size(uint8_t queue_type, uint64_t address),
 		  get_memtype(uint64_t address);
-	void request_dispatch();
+	void request_dispatch(), handle_write(), handle_read();
 
 };
 

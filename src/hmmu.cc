@@ -116,253 +116,116 @@ uint32_t MEMORY_MANAGER::get_size(uint8_t queue_type, uint64_t address)
     return 0;
 }
 
-void MEMORY_MANAGER::request_dispatch()
+void MEMORY_MANAGER::handle_write()
 {
 //distribute write requests
+    uint32_t index = WQ.head;
+    uint8_t w_forwarded = 1;
+
     if ((WQ.head == WQ.tail) && WQ.occupancy == 0) {
-        //return -1;
+        //no request in flight, no action
     }
-    else if (WQ.head < WQ.tail) {
-        for (uint32_t i=WQ.head; i<WQ.tail; i++) {
-            if (get_memtype(WQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(2, WQ.entry[i].address) == lower_level->get_size(2, WQ.entry[i].address)) {
+    else{
+    if (get_memtype(WQ.entry[index].hm_addr) < 1) { //send request to DRAM
+        if (lower_level->get_occupancy(2, WQ.entry[index].address) == lower_level->get_size(2, WQ.entry[index].address)) {
 
-                    // lower level WQ is full, cannot replace this victim
-                    lower_level->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
+            // DRAM WQ is full, cannot replace this victim
+            w_forwarded = 0;
+            lower_level->increment_WQ_FULL(WQ.entry[index].address);
+            STALL[WQ.entry[index].type]++;
+        }
+        else {
+            PACKET writeback_packet;
 
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
+            //writeback_packet.fill_level = fill_level << 1;
+            writeback_packet.cpu = WQ.entry[index].cpu;
+            writeback_packet.address = WQ.entry[index].address;
+            writeback_packet.full_addr = WQ.entry[index].full_addr;
+            writeback_packet.data = WQ.entry[index].data;
+            writeback_packet.instr_id = WQ.entry[index].instr_id;
+            writeback_packet.ip = 0; // writeback does not have ip
+            writeback_packet.type = WRITEBACK;
+            writeback_packet.event_cycle = WQ.entry[index].event_cycle;
 
-                    lower_level->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
-	        else { //send request to NVM
-                update_page_table(WQ.entry[i].address);
-                if (extra_interface->get_occupancy(2, WQ.entry[i].address) == extra_interface->get_size(2, WQ.entry[i].address)) {
-
-                    // lower level WQ is full, cannot replace this victim
-                    extra_interface->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
-
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
-
-                    extra_interface->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
+            lower_level->add_wq(&writeback_packet);
+        }
+        if (w_forwarded) {
+            WQ.remove_queue(&WQ.entry[index]);
         }
     }
-    else {//head >= tail && non-zero occupancy
-	    for (uint32_t i=WQ.head; i<WQ.SIZE; i++) {
-            if (get_memtype(WQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(2, WQ.entry[i].address) == lower_level->get_size(2, WQ.entry[i].address)) {
+	else { //send request to NVM
+        update_page_table(WQ.entry[index].address);
+        if (extra_interface->get_occupancy(2, WQ.entry[index].address) == extra_interface->get_size(2, WQ.entry[index].address)) {
 
-                    // lower level WQ is full, cannot replace this victim
-                    lower_level->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
-
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
-
-                    lower_level->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
-	        else { //send request to NVM
-                update_page_table(WQ.entry[i].address);
-                if (extra_interface->get_occupancy(2, WQ.entry[i].address) == extra_interface->get_size(2, WQ.entry[i].address)) {
-
-                    // lower level WQ is full, cannot replace this victim
-                    extra_interface->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
-
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
-
-                    extra_interface->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
+            // NVM WQ is full, cannot replace this victim
+            w_forwarded = 0;
+            extra_interface->increment_WQ_FULL(WQ.entry[index].address);
+            STALL[WQ.entry[index].type]++;
         }
-        for (uint32_t i=0; i<WQ.tail; i++) {
-            if (get_memtype(WQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(2, WQ.entry[i].address) == lower_level->get_size(2, WQ.entry[i].address)) {
+        else {
+            PACKET writeback_packet;
 
-                    // lower level WQ is full, cannot replace this victim
-                    lower_level->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
+            //writeback_packet.fill_level = fill_level << 1;
+            writeback_packet.cpu = WQ.entry[index].cpu;
+            writeback_packet.address = WQ.entry[index].address;
+            writeback_packet.full_addr = WQ.entry[index].full_addr;
+            writeback_packet.data = WQ.entry[index].data;
+            writeback_packet.instr_id = WQ.entry[index].instr_id;
+            writeback_packet.ip = 0; // writeback does not have ip
+            writeback_packet.type = WRITEBACK;
+            writeback_packet.event_cycle = WQ.entry[index].event_cycle;
 
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
-
-                    lower_level->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
-	        else { //send request to NVM
-                update_page_table(WQ.entry[i].address);
-                if (extra_interface->get_occupancy(2, WQ.entry[i].address) == extra_interface->get_size(2, WQ.entry[i].address)) {
-
-                    // lower level WQ is full, cannot replace this victim
-                    extra_interface->increment_WQ_FULL(WQ.entry[i].address);
-                    STALL[WQ.entry[i].type]++;
-                }
-                else {
-                    PACKET writeback_packet;
-
-                    //writeback_packet.fill_level = fill_level << 1;
-                    writeback_packet.cpu = WQ.entry[i].cpu;
-                    writeback_packet.address = WQ.entry[i].address;
-                    writeback_packet.full_addr = WQ.entry[i].full_addr;
-                    writeback_packet.data = WQ.entry[i].data;
-                    writeback_packet.instr_id = WQ.entry[i].instr_id;
-                    writeback_packet.ip = 0; // writeback does not have ip
-                    writeback_packet.type = WRITEBACK;
-                    writeback_packet.event_cycle = WQ.entry[i].event_cycle;
-
-                    extra_interface->add_wq(&writeback_packet);
-		    
-		            WQ.remove_queue(&WQ.entry[i]);
-            	    //WQ.num_returned--;
-                }
-            }
+            extra_interface->add_wq(&writeback_packet);
+        }
+        if (w_forwarded) {
+            WQ.remove_queue(&WQ.entry[index]);
         }
     }
+    }
+}
 
+void MEMORY_MANAGER::handle_read()
+{
 //distribute read requests
+    uint32_t index = RQ.head;
+    uint8_t r_forwarded = 1;
+
     if ((RQ.head == RQ.tail) && RQ.occupancy == 0) {
-        //return -1;
+        //no action
     }
-    else if (RQ.head < RQ.tail) {
-        for (uint32_t i=RQ.head; i<RQ.tail; i++) {
-            if (get_memtype(RQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(1, RQ.entry[i].address) == lower_level->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        lower_level->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }
-	        }
-	        else { //send request to NVM
-                update_page_table(RQ.entry[i].address);
-                if (extra_interface->get_occupancy(1, RQ.entry[i].address) == extra_interface->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        extra_interface->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }              
-            }
+    else{
+    if (get_memtype(RQ.entry[index].hm_addr) < 1) { //send request to DRAM
+        if (lower_level->get_occupancy(1, RQ.entry[index].address) == lower_level->get_size(1, RQ.entry[index].address)){
+            r_forwarded = 0;
+	        STALL[RQ.entry[index].type]++;
+        }
+        else{
+	        lower_level->add_rq(&RQ.entry[index]);
+        }
+        if (r_forwarded) {
+            RQ.remove_queue(&RQ.entry[index]);
         }
     }
-    else {//head >= tail && non-zero occupancy
-        for (uint32_t i=RQ.head; i<RQ.SIZE; i++) {
-            if (get_memtype(RQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(1, RQ.entry[i].address) == lower_level->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        lower_level->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }
-	        }
-	        else { //send request to NVM
-                update_page_table(RQ.entry[i].address);
-                if (extra_interface->get_occupancy(1, RQ.entry[i].address) == extra_interface->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        extra_interface->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }              
-            }
-	    }
-        for (uint32_t i=0; i<RQ.tail; i++) {
-            if (get_memtype(RQ.entry[i].hm_addr) < 1) { //send request to DRAM
-                if (lower_level->get_occupancy(1, RQ.entry[i].address) == lower_level->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        lower_level->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }
-	        }
-	        else { //send request to NVM
-                update_page_table(RQ.entry[i].address);
-                if (extra_interface->get_occupancy(1, RQ.entry[i].address) == extra_interface->get_size(1, RQ.entry[i].address)){
-			        STALL[RQ.entry[i].type]++;
-		        }
-		        else{
-			        extra_interface->add_rq(&RQ.entry[i]);
-			        RQ.remove_queue(&RQ.entry[i]);
-		        }              
-            }
+    else { //send request to NVM
+        update_page_table(RQ.entry[index].address);
+        if (extra_interface->get_occupancy(1, RQ.entry[index].address) == extra_interface->get_size(1, RQ.entry[index].address)){
+	        r_forwarded = 0;
+            STALL[RQ.entry[index].type]++;
         }
+        else{
+	        extra_interface->add_rq(&RQ.entry[index]);
+        }
+        if (r_forwarded) {
+            RQ.remove_queue(&RQ.entry[index]);
+        }             
     }
+    }
+}
+
+void MEMORY_MANAGER::request_dispatch()
+{
+    handle_write();
+    handle_read();
 }
 
 uint32_t MEMORY_MANAGER::get_memtype(uint64_t address)
