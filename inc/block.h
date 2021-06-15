@@ -4,6 +4,7 @@
 #include "champsim.h"
 #include "instruction.h"
 #include "set.h"
+#include <bitset>
 
 // CACHE BLOCK
 class BLOCK {
@@ -24,7 +25,8 @@ class BLOCK {
              data,
              ip,
              cpu,
-             instr_id;
+             instr_id,
+             hm_addr;
 
     // replacement state
     uint32_t lru;
@@ -46,6 +48,7 @@ class BLOCK {
         data = 0;
         cpu = 0;
         instr_id = 0;
+        hm_addr = 0;
 
         lru = 0;
     };
@@ -166,7 +169,8 @@ class PACKET {
         instr_id = 0;
         ip = 0;
         event_cycle = UINT64_MAX;
-	cycle_enqueued = 0;
+	    cycle_enqueued = 0;
+        hm_addr = 0;
     };
 };
 
