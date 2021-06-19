@@ -150,6 +150,8 @@ void MEMORY_MANAGER::handle_write()
             lower_level->add_wq(&writeback_packet);
         }
         if (w_forwarded) {
+            set_cached_block(WQ.entry[index].hm_addr);
+            update_recent_pages(WQ.entry[index].hm_addr);  //this is for DRAM pages protection
             WQ.remove_queue(&WQ.entry[index]);
         }
     }
@@ -173,7 +175,7 @@ void MEMORY_MANAGER::handle_write()
             set_cached_block(WQ.entry[index].hm_addr);//set the bit in the bitset to record the cached block
             //check if the number of cached blocks hit the threshold
             uint8_t cached_number = get_cached_number(WQ.entry[index].hm_addr);
-            if (cached_number >= THRESHOLD) {
+            if (cached_number >= threshold) {
                 //invalidate all the blocks from that page
                 uint64_t target_page = (WQ.entry[index].hm_addr >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
                 for (uint32_t set=0; set<NUM_SET; set++) {
@@ -203,7 +205,7 @@ void MEMORY_MANAGER::handle_write()
             // IF STALLED TO NEXT CYCLE, NEED TO UPDATE HM_ADDR IN THE PACKET 
             // represent that the data migration completes in the stalled time
             // QUESTION: THIS MAY REQUIRE DMA TO ADD THE R/W QUEUES IN THE ABOVE, SO THE STALL AND MIGRATION MATCH
-            // QUESTION: MAYBE DO PAGE SWAP EARLIER, RIGHT AFTER COMPARING THE THRESHOLD,
+            // QUESTION: MAYBE DO PAGE SWAP EARLIER, RIGHT AFTER COMPARING THE threshold,
             //           AND THEN THE DIRTY BLOCKS IN DRAM CACHE COULD USE TO UPDATE THE DRAM PAGE
             if (extra_interface->get_occupancy(2, WQ.entry[index].address) == extra_interface->get_size(2, WQ.entry[index].address)) {
 
@@ -289,6 +291,8 @@ void MEMORY_MANAGER::handle_read()
 	        lower_level->add_rq(&RQ.entry[index]);
         }
         if (r_forwarded) {
+            set_cached_block(RQ.entry[index].hm_addr);
+            update_recent_pages(RQ.entry[index].hm_addr);
             RQ.remove_queue(&RQ.entry[index]);
         }
     }
@@ -311,7 +315,7 @@ void MEMORY_MANAGER::handle_read()
             set_cached_block(RQ.entry[index].hm_addr);//set the bit in the bitset to record the cached block
             //check if the number of cached blocks hit the threshold
             uint8_t cached_number = get_cached_number(RQ.entry[index].hm_addr);
-            if (cached_number >= THRESHOLD) {
+            if (cached_number >= threshold) {
                 //invalidate all the blocks from that page
                 uint64_t target_page = (RQ.entry[index].hm_addr >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
                 for (uint32_t set=0; set<NUM_SET; set++) {
@@ -365,6 +369,11 @@ void MEMORY_MANAGER::request_dispatch()
 {
     handle_write();
     handle_read();
+    if (current_core_cycle[0]%1024 == 0) {
+        revisited_stats();
+    }
+    //revisited_stats();
+    tune_threshold();
 }
 
 uint32_t MEMORY_MANAGER::get_memtype(uint64_t address)
@@ -414,14 +423,29 @@ uint64_t MEMORY_MANAGER::hmmu_rand()
 uint64_t MEMORY_MANAGER::search_fast_page()
 {
     uint32_t is_slow = 1;
+    uint32_t is_recent = 1;
     uint64_t candidate_physical_pn = 0;
     uint64_t candidate_hybrid_memory_pn = 0;
-    while(is_slow) //while the mapped candidate is a slow memory page
+    std::deque<uint64_t>::iterator it;
+
+    while(is_slow || is_recent) //while the mapped candidate is a slow memory page
     {
-        //ppage_to_hmpage_map[(hmmu_rand()%(num_ppages))] > DRAM_PAGES/8
         candidate_physical_pn = hmmu_rand()%(num_ppages);
         candidate_hybrid_memory_pn = ppage_to_hmpage_map[candidate_physical_pn];
-        if(candidate_hybrid_memory_pn < DRAM_PAGES/8) //already find a fast page
+        for (it=recently_used_pages.begin(); it!=recently_used_pages.end(); ++it){
+            if (candidate_hybrid_memory_pn == *it) { 
+                break;
+            }
+        }
+        if (it == recently_used_pages.end()) { //the for loop completes, no match found
+            is_recent = 0; //eligible swap candidate, jump out of while loop
+        }
+        else {
+            is_recent = 1; //this is a recent page, retry searching!
+        }
+        
+        //ppage_to_hmpage_map[(hmmu_rand()%(num_ppages))] <=> DRAM_PAGES/NVM_RATIO
+        if(candidate_hybrid_memory_pn < DRAM_PAGES/NVM_RATIO) //already find a fast page
         {
             is_slow = 0;
         }
@@ -429,7 +453,7 @@ uint64_t MEMORY_MANAGER::search_fast_page()
         {
             counter++;
         }
-    }
+    } 
     return candidate_physical_pn;
 }
 
@@ -444,6 +468,15 @@ void MEMORY_MANAGER::update_page_table(uint64_t address)
 {
     uint64_t physical_pn = (address >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
     uint64_t victim_ppn = search_fast_page();
+
+    //add function here: everytime do a swap, I should clear all the bits in the bitset corresponding to both hybrid pages involved
+    //for the swap initiator page: it will go DRAM, now the bits signifies number of cached blocks, clear it so I leave a clean bitset for the coming victim
+    //    ---->this is done in the handle read/write function
+    //for the victim, it will go NVM, now the bits signifies number of re-visited blocks, clear it so I leave a clean bitset for the coming initiator
+    //since the victim page number is non-visible outside, I should clear the victim bitset here
+    uint64_t victim_hm_pn = ppage_to_hmpage_map[victim_ppn];
+    block_counter[victim_hm_pn].reset();
+
     page_swap(physical_pn, victim_ppn);
 }
 
@@ -616,4 +649,63 @@ uint8_t MEMORY_MANAGER::get_cached_number(uint64_t address)
     uint64_t hm_pn = (address >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
     
     return (uint8_t) block_counter[hm_pn].count();
+}
+
+void MEMORY_MANAGER::revisited_stats()
+{
+    revisited_count = 0;
+    for (std::deque<uint64_t>::iterator it=recently_used_pages.begin(); it!=recently_used_pages.end(); ++it) {
+        revisited_count += block_counter[*it].count(); //sum up the number of revisited blocks of recently used pages
+    }
+    // found that counting total numbers is too time-consuming, better try tracking some recently accessed pages.
+}
+
+void MEMORY_MANAGER::update_recent_pages(uint64_t address) //input an accessed address(a hm_addr), do the recency stuff
+{
+    uint64_t pn = (address >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1); //extract page number from address
+    std::deque<uint64_t>::iterator it;
+    //LOGIC: if already tracked, remove it and re-insert it into the back(MRU)
+    //else:
+    //  if size() not reaching 2048(or upper limit), do only push_back()
+    //  else do push_back() and then pop_front() to maintain the size
+    for (it=recently_used_pages.begin(); it!=recently_used_pages.end(); ++it){
+        if (pn == *it) {
+            break;
+        }
+    }
+    if (it == recently_used_pages.end()) { //this page is not being tracked
+        if (recently_used_pages.size() < NUM_RECENT_PAGES) { //simply append this one
+            recently_used_pages.push_back(pn);
+        }
+        else {//reach the max tracking amount
+            recently_used_pages.pop_front();
+            recently_used_pages.push_back(pn);
+        }
+    }
+    else {//this page is being tracked, promote to back (MRU)
+        recently_used_pages.erase(it);
+        recently_used_pages.push_back(pn);
+    }
+}
+
+void MEMORY_MANAGER::tune_threshold()
+{
+    // current configuration:
+    // threshold: 2~6
+    // average revisited blocks per page triggering tuning: 20
+    uint8_t blocks_per_page;
+    if (recently_used_pages.size() > 0) {
+        blocks_per_page = (uint8_t) revisited_count/recently_used_pages.size();
+    }
+    uint8_t anchor = 20;
+    if (blocks_per_page > anchor) {
+        if (threshold > 2) {
+            threshold--;
+        }
+    }
+    else {
+        if (threshold < 6) {
+            threshold++;
+        }
+    }
 }

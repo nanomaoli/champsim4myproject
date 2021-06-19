@@ -16,6 +16,7 @@
 #define LOG2_FMC_SET 15
 #define FMC_WAY 4
 #define THRESHOLD 4
+#define NUM_RECENT_PAGES 2048 //number of the tracked recently used pages
 
 //HMMU
 class MEMORY_MANAGER : public MEMORY {
@@ -28,7 +29,7 @@ class MEMORY_MANAGER : public MEMORY {
 	std::map<uint64_t, uint64_t> ppage_to_hmpage_map;
 
 	//uint64_t num_fmc_pages; the maximum number of different pages in the fast memory cache
-	std::map<uint64_t, std::bitset<32>> block_counter;
+	std::map<uint64_t, std::bitset<32>> block_counter;  //this is used for two tasks: DRAM part for revisit, and NVM part for caching stats; reset on page swap
 
 	uint64_t hmmu_rand();
 	uint64_t get_hybrid_memory_pn(uint64_t address); // input: physical address, output: current mapped hybrid memory page number
@@ -42,10 +43,14 @@ class MEMORY_MANAGER : public MEMORY {
 
   public:
 	const string NAME;
+	uint64_t revisited_count;
+	uint32_t threshold;
+	std::deque<uint64_t> recently_used_pages; 
+
 	PACKET_QUEUE WQ{NAME + "_WQ", HMMU_WQ_SIZE}, //write queue
 		     RQ{NAME + "_RQ", HMMU_RQ_SIZE}; //read queue
 //constructor
-	MEMORY_MANAGER(string v1, uint64_t v2, uint64_t v3, uint32_t v4, uint32_t v5): NAME(v1), num_ppages(v2), counter(v3), NUM_SET(v4), NUM_WAY(v5){	
+	MEMORY_MANAGER(string v1, uint64_t v2, uint64_t v3, uint32_t v4, uint32_t v5/*, uint8_t v6*/): NAME(v1), num_ppages(v2), counter(v3), NUM_SET(v4), NUM_WAY(v5)/*, threshold(v6)*/ {	
 		//initialize the physical to internal address mapping
 		for(uint64_t i=0; i<num_ppages; i++) {
 			ppage_to_hmpage_map[i] = i;
@@ -66,6 +71,15 @@ class MEMORY_MANAGER : public MEMORY {
 		for(uint64_t i=0; i<num_ppages; i++) {
 			block_counter[i] = 0;
 		}
+
+		//initialize the revisited stats
+		revisited_count = 0;
+		/* let it alone so the empty constructor gets used
+		//initialize the tracking list of recently used pages
+		for (uint64_t i=0; i<NUM_RECENT_PAGES; i++) {
+			recently_used_pages.push_back(i);
+		} */
+		threshold = THRESHOLD;
 	};
 //destructor
 	~MEMORY_MANAGER(){
@@ -106,6 +120,11 @@ class MEMORY_MANAGER : public MEMORY {
 		 reset_cached_block(uint64_t address);
 
 	uint32_t get_set(uint64_t address);
+
+	void revisited_stats(),
+		 update_recent_pages(uint64_t address),
+		 tune_threshold();
+
 };
 
 #endif

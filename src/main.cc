@@ -951,8 +951,8 @@ int main(int argc, char** argv)
 
         // TODO: should it be backward?
         uncore.DRAM.operate();
-	uncore.NVM.operate();
-	uncore.HMMU.operate();
+	    uncore.NVM.operate();
+	    uncore.HMMU.operate();
         uncore.LLC.operate();
     }
 
@@ -1007,6 +1007,10 @@ int main(int argc, char** argv)
     print_dram_stats();
     print_branch_stats();
 #endif
-
+    //test the revisted_stats here
+    //uncore.HMMU.revisited_stats();
+    cout << "number of revisited blocks: " << uncore.HMMU.revisited_count << endl;
+    cout << "current number of recently used pages: " << uncore.HMMU.recently_used_pages.size() << endl;
+    cout << "current threshold for page swap: " << uncore.HMMU.threshold << endl;
     return 0;
 }
