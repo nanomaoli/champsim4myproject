@@ -794,6 +794,7 @@ int main(int argc, char** argv)
         uncore.DRAM.fill_level = FILL_DRAM;
         uncore.DRAM.upper_level_icache[i] = &uncore.LLC;
         uncore.DRAM.upper_level_dcache[i] = &uncore.LLC;
+        uncore.DRAM.mmu = &uncore.HMMU;
         for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
             uncore.DRAM.RQ[i].is_RQ = 1;
             uncore.DRAM.WQ[i].is_WQ = 1;
@@ -803,6 +804,7 @@ int main(int argc, char** argv)
         uncore.NVM.fill_level = FILL_DRAM;
         uncore.NVM.upper_level_icache[i] = &uncore.LLC;
         uncore.NVM.upper_level_dcache[i] = &uncore.LLC;
+        uncore.NVM.mmu = &uncore.HMMU;
         for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
             uncore.NVM.RQ[i].is_RQ = 1;
             uncore.NVM.WQ[i].is_WQ = 1;

@@ -305,6 +305,30 @@ void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
                 // update data bus cycle time
                 dbus_cycle_available[op_channel] = current_core_cycle[op_cpu] + DRAM_DBUS_RETURN_TIME;
 
+                if (queue->entry[request_index].is_dma) { // this is dma operation, do not return data to cache system
+                    //block eviction case
+                    if (mmu->inflight_blocks.size()) { // a block eviction in the fast memory cache is happening
+                        if (op_addr == mmu->cached_block) { //the evicted block in the fast memory cache is read out
+                            mmu->cached_block_write = 1;
+                        }
+                        if (op_addr == mmu->incoming_block) { //the accessed block in the NVM is read out
+                            mmu->incoming_block_write = 1;
+                        }
+                    }
+                    //TODO page swap case
+                    if (mmu->incoming_page_progress.size()) { // a page swap between DRAM and NVM is happening
+                        uint64_t pn = (op_addr >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
+                        if (pn == mmu->incoming_page) {//the incoming page fromm NVM is being read
+                            uint8_t bn = (op_addr & (((1 << 5) - 1) << 7)) >> 7;  //extract the block number;
+                            mmu->incoming_page_block_write.set(bn);  //set the proper bit of incoming_page_block_write;
+                        }
+                        if (pn == mmu->victim_page) {//the victim page from DRAM is being read
+                            uint8_t bn = (op_addr & (((1 << 5) - 1) << 7)) >> 7;  //extract the block number;
+                            mmu->victim_page_block_write.set(bn);  //set the proper bit of victim_page_block_write;
+                        }
+                    }
+                }
+
                 if (bank_request[op_channel][op_rank][op_bank].row_buffer_hit)
                     queue->ROW_BUFFER_HIT++;
                 else
@@ -330,8 +354,33 @@ void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
                 cout << " row: " << op_row << " column: " << op_column;
                 cout << " current_cycle: " << current_core_cycle[op_cpu] << " event_cycle: " << queue->entry[request_index].event_cycle << endl; });
 
-                // send data back to the core cache hierarchy
-                upper_level_dcache[op_cpu]->return_data(&queue->entry[request_index]);
+                if (queue->entry[request_index].is_dma) { // this is dma operation, do not return data to cache system
+                    //block eviction case
+                    if (mmu->inflight_blocks.size()) { // a block eviction in the fast memory cache is happening
+                        if (op_addr == mmu->cached_block) { //the evicted block in the fast memory cache is read out
+                            mmu->cached_block_read = 1;
+                        }
+                        if (op_addr == mmu->incoming_block) { //the accessed block in the NVM is read out
+                            mmu->incoming_block_read = 1;
+                        }
+                    }
+                    //TODO page swap case
+                    if (mmu->incoming_page_progress.size()) { // a page swap between DRAM and NVM is happening
+                        uint64_t pn = (op_addr >> LOG2_PAGE_SIZE) & ((1 << LOG2_DRAM_PAGES)-1);
+                        if (pn == mmu->incoming_page) {//the incoming page fromm NVM is being read
+                            uint8_t bn = (op_addr & (((1 << 5) - 1) << 7)) >> 7;  //extract the block number;
+                            mmu->incoming_page_block_read.set(bn);  //set the proper bit of incoming_page_block_read;
+                        }
+                        if (pn == mmu->victim_page) {//the victim page from DRAM is being read
+                            uint8_t bn = (op_addr & (((1 << 5) - 1) << 7)) >> 7;  //extract the block number;
+                            mmu->victim_page_block_read.set(bn);  //set the proper bit of victim_page_block_read;
+                        }
+                    }
+                }
+                else {
+                    // send data back to the core cache hierarchy
+                    upper_level_dcache[op_cpu]->return_data(&queue->entry[request_index]);
+                }
 
                 if (bank_request[op_channel][op_rank][op_bank].row_buffer_hit)
                     queue->ROW_BUFFER_HIT++;

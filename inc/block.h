@@ -119,6 +119,8 @@ class PACKET {
              cycle_enqueued,
              hm_addr;
 
+    uint8_t is_dma;
+
     PACKET() {
         instruction = 0;
         is_data = 1;
@@ -171,6 +173,7 @@ class PACKET {
         event_cycle = UINT64_MAX;
 	    cycle_enqueued = 0;
         hm_addr = 0;
+        is_dma = 0;
     };
 };
 

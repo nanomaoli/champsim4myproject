@@ -2,6 +2,7 @@
 #define DRAM_H
 
 #include "memory_class.h"
+#include "hmmu.h"
 
 // DRAM configuration
 #define DRAM_CHANNEL_WIDTH 8 // 8B
@@ -31,6 +32,7 @@ extern uint32_t DRAM_MTPS, DRAM_DBUS_RETURN_TIME;
 // DRAM
 class MEMORY_CONTROLLER : public MEMORY {
   public:
+    MEMORY_MANAGER *mmu; // connect HMMU with DRAM/NVM, so I can modify HMMU's state in dram_controller.cc
     const string NAME;
 
     uint32_t rp, rcd, cas;
